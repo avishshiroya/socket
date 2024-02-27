@@ -7,7 +7,7 @@ const broadcastSchema = new Schema({
         type:mongoose.Schema.Types.ObjectId,
         ref:'Users'
     },
-    memebersId:[{
+    membersId:[{
         type:mongoose.Schema.Types.ObjectId,
         ref:'users'
     }],

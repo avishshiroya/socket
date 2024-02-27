@@ -83,39 +83,40 @@ io.on('connection', async (socket) => {
   socket.on("broadcast", async ({ name, message }) => {
 
     const members = await broadcastModel.findOne({ name })
-    if (!members) {
-      socket.emit('error', "Not have any member")
-    }
-    console.log(socket.userId, members.userId)
-    console.log(members.userId !== socket.userId)
-    if (String(members.userId) == socket.userId) {
-
-      console.log(members)
-      // console.log(members)
-      // io.emit("broadcast",members.memebersId)
-      //add the user message ****** 
-      const messages = new broadMsgModel({
-        broad_id: members._id, msg: message
-      })
-      await messages.save();
-      const memebersID = members.memebersId
-      ///send the messages to the broadcast memebers
-      memebersID.map(async (data, index) => {
-        console.log(data)
-        let reciever_id = users[data]
-        //save the message in the msgModel
-        const messages = new msgModel({
-          sender_id: socket.userId, reciever_id: data, msg: message
+    if(members){
+      // console.log(socket.userId, members.userId)
+      // console.log(members.userId !== socket.userId)
+      if (String(members.userId) == socket.userId) {
+        
+        console.log(members)
+        // console.log(members)
+        // io.emit("broadcast",members.membersId)
+        //add the user message ****** 
+        const messages = new broadMsgModel({
+          broad_id: members._id, msg: message
         })
-        const msgID = await messages.save();
-        socket.to(reciever_id).emit('message', { message_id: msgID._id, sender: user.username, message })
-      })
-    } else {
-      socket.emit('error', "you can't do message in this broadcast channel")
-    }
-  })
-
-  //reply of message ===================
+        await messages.save();
+        const membersID = members.membersId
+        ///send the messages to the broadcast memebers
+        membersID.map(async (data, index) => {
+          console.log(data)
+          let reciever_id = users[data]
+          //save the message in the msgModel
+          const messages = new msgModel({
+            sender_id: socket.userId, reciever_id: data, msg: message
+          })
+          const msgID = await messages.save();
+          socket.to(reciever_id).emit('message', { message_id: msgID._id, sender: user.username, message })
+        })
+      } else {
+        socket.emit('error', "you can't do message in this broadcast channel")
+      }}
+      else{
+        socket.emit('error', "Not have any broadcast channel")
+      }
+    })
+    
+    //reply of message ===================
   socket.on("reply", async ({ msg_id, message }) => {
     const msg = await msgModel.findById({ _id: msg_id });
     console.log(msg)

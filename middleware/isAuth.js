@@ -2,7 +2,7 @@ import  JWT  from "jsonwebtoken";
 import userModel from "../models/user.model.js";
 export const isAuth = async (req,res,next)=>{
     try {
-        const token = req.headers["token"];
+        const {token} = req.cookies;
         console.log(token);
         if(!token){
             return res.status(401).send({
@@ -10,7 +10,7 @@ export const isAuth = async (req,res,next)=>{
                 message:"user Not Authenticated"
             })
         }
-        const JWTtoken = token.split(" ")[1];
+        const JWTtoken = token.split("%20")[1];
         const isVerify =  JWT.verify(JWTtoken,process.env.JWT_SECRET)
         const user = await userModel.findById({_id:isVerify._id});
         if(!user){
