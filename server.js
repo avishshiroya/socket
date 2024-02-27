@@ -51,8 +51,7 @@ io.use(async (socket, next) => {
 io.on('connection', async (socket) => {
   console.log("connected")
 
-  const userMessages = await msgModel.find({ $or: [{ sender_id: socket.userId }, { reciever_id: socket.userId }] }, { sender_id: 1, reciever_id: 1, msg: 1 }).populate('sender_id', { username: 1, _id: 0 }).populate('reciever_id', { username: 1, _id: 0 });
-  // const userMessages = await msgModel.aggregate([{$match:{ sender_id: socket.userId ,  reciever_id: socket.userId }}],{sender_id:1,reciever_id:1}).populate('sender_id',{username:1,_id:0}).populate('reciever_id',{username:1,_id:0});
+  const userMessages = await msgModel.find({ $or: [{ sender_id: socket.userId }, { reciever_id: socket.userId }] }, { sender_id: 1, reciever_id: 1, msg: 1 }).sort({ createdAt: -1 }).populate('sender_id', { username: 1, _id: 0 }).populate('reciever_id', { username: 1, _id: 0 });
   if (userMessages) {
     socket.emit('userEnter', userMessages, userMessages.length)
   } else {
@@ -66,13 +65,18 @@ io.on('connection', async (socket) => {
   socket.on("message", async ({ to, message }) => {
     const reciever_id = users[to]
     // console.log(reciever_id)
-    socket.to(reciever_id).emit('message', { sender: user.username, message })
     const messages = new msgModel({
       sender_id: socket.userId, reciever_id: to, msg: message
     })
-    await messages.save();
+    const msg = await messages.save();
+    socket.to(reciever_id).emit('message', { message_id: msg._id, sender: user.username, message })
     // console.log(to)
     // socket.broadcast.emit("message", {to,message});
+  })
+  //broadcast data
+  socket.on("broadcastData", async (_id) => {
+    const sendData = await broadMsgModel.find({ broad_id: _id }, { msg: 1, _id: 0 }).sort({ createdAt: 1 });
+    socket.emit("broadcastData", sendData)
   })
 
   //broadcast channel
@@ -81,9 +85,8 @@ io.on('connection', async (socket) => {
     const members = await broadcastModel.findOne({ name })
     if (!members) {
       socket.emit('error', "Not have any member")
-      io.emit('disconnect', user.username + "disconnected");
     }
-    console.log(socket.userId, members.length, members.userId)
+    console.log(socket.userId, members.userId)
     console.log(members.userId !== socket.userId)
     if (String(members.userId) == socket.userId) {
 
@@ -100,13 +103,74 @@ io.on('connection', async (socket) => {
       memebersID.map(async (data, index) => {
         console.log(data)
         let reciever_id = users[data]
-        socket.to(reciever_id).emit('message', { sender: user.username, message })
+        //save the message in the msgModel
+        const messages = new msgModel({
+          sender_id: socket.userId, reciever_id: data, msg: message
+        })
+        const msgID = await messages.save();
+        socket.to(reciever_id).emit('message', { message_id: msgID._id, sender: user.username, message })
       })
     } else {
       socket.emit('error', "you can't do message in this broadcast channel")
     }
   })
 
+  //reply of message ===================
+  socket.on("reply", async ({ msg_id, message }) => {
+    const msg = await msgModel.findById({ _id: msg_id });
+    console.log(msg)
+    if (msg) {
+      if (String(msg.reciever_id) == socket.userId) {
+        const reciever_id = users[msg.sender_id];
+        const messageId = new msgModel({
+          sender_id: socket.userId,
+          reciever_id: msg.sender_id,
+          msg: message
+        })
+        const messsageSave = await messageId.save();
+        const msgID = messsageSave._id;
+        const saveReply = await msgModel.findOneAndUpdate({ _id: msg._id }, { $push: { reply: msgID } })
+        if (saveReply) {
+          socket.to(reciever_id).emit('reply', { message_id: msgID, sender: user.username,message: msg.msg, replyMessage: message })
+        } else {
+          socket.emit('error', "can't save reply to this message")
+
+        }
+      } else {
+        socket.emit('error', "can't reply to this message")
+      }
+    } else {
+      socket.emit('error', "Message Doesn't Exists")
+    }
+  })
+
+  socket.on("reaction",async({msg_id,reaction})=>{
+    const msg = await msgModel.findById({ _id: msg_id });
+    console.log(msg)
+    if (msg) {
+      if (String(msg.reciever_id) == socket.userId) {
+        const reciever_id = users[msg.sender_id];
+        const messageId = new msgModel({
+          sender_id: socket.userId,
+          reciever_id: msg.sender_id,
+          msg: reaction
+        })
+        const messsageSave = await messageId.save();
+        const msgID = messsageSave._id;
+        const saveReply = await msgModel.findOneAndUpdate({ _id: msg._id }, { $push: { reaction: msgID } })
+        if (saveReply) {
+          socket.to(reciever_id).emit('reaction', { message_id: msgID, sender: user.username,message: msg.msg, reaction })
+        } else {
+          socket.emit('error', "can't save reaction to this message")
+
+        }
+      } else {
+        socket.emit('error', "can't reaction to this message")
+      }
+    } else {
+      socket.emit('error', "Message Doesn't Exists")
+    }
+  })
 
   socket.on('disconnect', () => {
     console.log("disconnected")
