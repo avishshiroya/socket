@@ -62,9 +62,7 @@ export const userLoginController = async(req,res)=>{
         }
         const JWTtoken = Jwt.sign({_id:checkUser._id},process.env.JWT_SECRET);
         const token = "Bearer "+JWTtoken
-        res.status(200).cookie("token",token,{
-            maxAge:15*24*60*60*1024
-        }).send({
+        res.status(200).header("token",token).send({
             success:true,
             message:"User login"
         })

@@ -2,7 +2,7 @@ import  JWT  from "jsonwebtoken";
 import userModel from "../models/user.model.js";
 export const isAuth = async (req,res,next)=>{
     try {
-        const {token} = req.cookies;
+        const token = req.headers["token"];
         console.log(token);
         if(!token){
             return res.status(401).send({

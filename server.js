@@ -21,6 +21,8 @@ import Routes from "./routes/index.js";
 import { decodeToken } from "./middleware/isAuth.js";
 import msgModel from "./models/msg.model.js";
 import userModel from "./models/user.model.js";
+import broadcastModel from "./models/broadcast.model.js";
+import broadMsgModel from "./models/broadcastMsg.model.js";
 app.use("/api/v1", Routes);
 app.get("/", (req, res) => {
   res.status(200).send({
@@ -32,11 +34,11 @@ var users = {};
 io.use(async (socket, next) => {
   // console.log(socket.handshake)
   const token = socket.handshake.headers.token;
-  if(!token){
+  if (!token) {
     io.close();
     return next(new Error("User Not Verified"))
   }
-  const JWTtoken = token.split("%20")[1];
+  const JWTtoken = token.split(" ")[1];
   const _id = decodeToken(JWTtoken);
   if (_id) {
     console.log("User Authenticated");
@@ -46,29 +48,70 @@ io.use(async (socket, next) => {
     return next(new Error('authentication error'))
   }
 })
-io.on('connection', (socket) => {
+io.on('connection', async (socket) => {
   console.log("connected")
 
-
+  const userMessages = await msgModel.find({ $or: [{ sender_id: socket.userId }, { reciever_id: socket.userId }] }, { sender_id: 1, reciever_id: 1, msg: 1 }).populate('sender_id', { username: 1, _id: 0 }).populate('reciever_id', { username: 1, _id: 0 });
+  // const userMessages = await msgModel.aggregate([{$match:{ sender_id: socket.userId ,  reciever_id: socket.userId }}],{sender_id:1,reciever_id:1}).populate('sender_id',{username:1,_id:0}).populate('reciever_id',{username:1,_id:0});
+  if (userMessages) {
+    socket.emit('userEnter', userMessages, userMessages.length)
+  } else {
+    socket.emit('userEnter', "you don't have any chat")
+  }
   users[socket.userId] = socket.id
-  io.emit("userEnter", Object.keys(users))
+  const user = await userModel.findById(socket.userId);
+  socket.broadcast.emit("userEnter", user.username + " online")
   // console.log(users)
   // socket.broadcast.emit('userEnter',"user enter" + socket.id)
-  socket.on("message", async({ to, message }) => {
+  socket.on("message", async ({ to, message }) => {
     const reciever_id = users[to]
     // console.log(reciever_id)
-    socket.to(reciever_id).emit('message', { sender: to, message })
+    socket.to(reciever_id).emit('message', { sender: user.username, message })
     const messages = new msgModel({
-      sender_id:socket.userId, reciever_id: to, msg: message
+      sender_id: socket.userId, reciever_id: to, msg: message
     })
     await messages.save();
     // console.log(to)
     // socket.broadcast.emit("message", {to,message});
   })
+
+  //broadcast channel
+  socket.on("broadcast", async ({ name, message }) => {
+
+    const members = await broadcastModel.findOne({ name })
+    if (!members) {
+      socket.emit('error', "Not have any member")
+      io.emit('disconnect', user.username + "disconnected");
+    }
+    console.log(socket.userId, members.length, members.userId)
+    console.log(members.userId !== socket.userId)
+    if (String(members.userId) == socket.userId) {
+
+      console.log(members)
+      // console.log(members)
+      // io.emit("broadcast",members.memebersId)
+      //add the user message ****** 
+      const messages = new broadMsgModel({
+        broad_id: members._id, msg: message
+      })
+      await messages.save();
+      const memebersID = members.memebersId
+      ///send the messages to the broadcast memebers
+      memebersID.map(async (data, index) => {
+        console.log(data)
+        let reciever_id = users[data]
+        socket.to(reciever_id).emit('message', { sender: user.username, message })
+      })
+    } else {
+      socket.emit('error', "you can't do message in this broadcast channel")
+    }
+  })
+
+
   socket.on('disconnect', () => {
     console.log("disconnected")
     delete users[socket.userId];
-    io.emit("userEnter", Object.keys(users))
+    socket.broadcast.emit("userEnter", user.username + " offline")
   })
 
 })
@@ -101,12 +144,12 @@ io.on('connection', (socket) => {
 //   console.log(socket.id)
 //     socket.broadcast.emit('userEnter', { sender_id, id: socket.id })
 
-//   const userMessages = await msgModel.find({ $or: [{ sender_id: sender_id }, { reciever_id: sender_id }] });
-//   if (userMessages) {
-//     socket.emit('userEnter', userMessages)
-//   } else {
-//     socket.emit('userEnter', "you don't have any chat")
-//   }
+// const userMessages = await msgModel.find({ $or: [{ sender_id: sender_id }, { reciever_id: sender_id }] });
+// if (userMessages) {
+//   socket.emit('userEnter', userMessages)
+// } else {
+//   socket.emit('userEnter', "you don't have any chat")
+// }
 
 //   socket.on('message', async ({ to, message }) => {
 //     if (!message) {
